@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+	<head>
+	  <meta charset='utf-8' />
+	</head>
+	<body>
+		<h1>Hello Google Sheets API</h1>
+		<em>Open the console and watch for errors and debug messages.</em>
+		<div id="step1">
+		    <h2>Step 1: Authorize this app with your Google account</h2>
+		    <span id="authorize-status"></span>
+		    <button id="authorize-button" style="visibility: hidden">Authorize</button>
+		</div>
+		
+		<div id="step2">
+            <h2>Step 2: Create a Spreadsheet document in Google Drive</h2>
+            <span id="create-status"></span>
+            <button id="create-button">Create file in Drive</button>
+            <em>Add a file named "blocky" to Google Drive</em>
+        </div>
+        
+        <div id="step3">
+            <h2>Step 3: Search spreadsheet files by the name "blocky"</h2>
+            <span id="list-status"></span>
+            <button id="list-button">Search files (json)</button>
+            
+        </div>
+        
+        <div id="step4">
+            <h2>Step 4: Find the first file named "blocky" and retrieve the worksheets</h2>
+            <span id="worksheets-status"></span>
+            <button id="worksheets-button">Retrieve worksheets</button>
+        </div>
+        
+        <div id="step5">
+            <h2>Step 5: Add rows to the first worksheet from the spreadsheet "blocky"</h2>
+            <span id="rows-status"></span>
+            <button id="rows-button">Add rows</button>
+        </div>
+		
+		<script src="client.js"></script>
+        
+        <script type="text/javascript">
+		var scopes = 'https://spreadsheets.google.com/feeds',
+		    headers = {
+				accept_json: {'Accept': 'application/json'},
+				accept_xml: {'Accept': 'application/atom+xml'},
+				send_json: {'Content-Type': 'application/json'},
+				send_xml: {'Content-Type': 'application/atom+xml'}
+		    },    
+		    authorizeButton = document.getElementById('authorize-button'),
+		    authorizeStatus = document.getElementById('authorize-status'),
+	        createButton = document.getElementById('create-button'),
+	        listButton = document.getElementById('list-button'),
+	        worksheetsButton = document.getElementById('worksheets-button'),
+	        rowsButton = document.getElementById('rows-button');
+
+		function handleClientLoad() {
+			checkAuth();
+			createButton.onclick = handleCreateClick;
+			listButton.onclick = handleListClick;
+			worksheetsButton.onclick = handleWorksheetsClick;
+			rowsButton.onclick = handleRowClick;
+		}
+    
+		function checkAuth() {
+		    gapi.auth.authorize({client_id: clientId, scope: scopes, immediate: true}, handleAuthResult);
+		}
+    
+		function handleAuthResult(authResult) {
+			if (authResult && !authResult.error) {
+				// this app is authorised
+				authorizeButton.style.visibility = 'hidden';
+				authorizeStatus.innerHTML = 'Is Authorised';
+				//makeApiCall();
+			} else {
+				authorizeButton.style.visibility = '';
+				authorizeButton.onclick = handleAuthClick;
+				authorizeStatus.innerHTML = 'Not Authorised';
+			}
+		}
+    
+		function handleAuthClick(event) {
+			gapi.auth.authorize({client_id: clientId, scope: scopes, immediate: false}, handleAuthResult);
+		    return false;
+		}
+    
+		function request(method, url, post_data, sucess_call, headers) {
+			var oauthToken = gapi.auth.getToken(),
+			    xhr = new XMLHttpRequest();
+			
+			console.info('request url', url);
+			
+			xhr.open(method, url);
+			xhr.setRequestHeader('Authorization', 'Bearer ' + oauthToken.access_token);
+			//xhr.setRequestHeader("GData-Version", "3.0");
+			if(headers !== undefined) {
+				for(var key in headers) {
+					xhr.setRequestHeader(key, headers[key]);
+				}
+			}
+			
+			xhr.onload = function() {
+			    console.info('response xhr', xhr);
+			    if(typeof sucess_call === "function")
+			        sucess_call(xhr);
+			};
+			
+			xhr.onerror = function(err) {
+			    console.error('Get Woops', err);
+			};
+			
+			xhr.send(post_data);
+		}
+	    
+		function get_request(url, success_call, headers) {
+			return request('GET', url, null, success_call, headers);
+		}
+		
+		function post_request(url, data, success_call, headers) {
+            return request('POST', url, data, success_call, headers);
+        }
+		
+		function json_url(url) {
+		    return url+'?alt=json';
+		}
+		
+		function serialize(obj) {
+            return '?'+Object.keys(obj).reduce(function(a,k){a.push(k+'='+encodeURIComponent(obj[k]));return a},[]).join('&')
+        }
+        
+        function xhr_json_response(xhr) {
+            return JSON.parse(xhr.responseText);
+        }
+		
+		function handleCreateClick(event) {
+			/*
+			To upload a file, check the Javascript example
+			from https://developers.google.com/drive/v2/reference/files/insert
+			*/
+			var body = {
+				    'mimeType': 'application/vnd.google-apps.spreadsheet',
+	                'title': 'blocky'},
+	            url = 'https://www.googleapis.com/drive/v2/files';
+			post_request(url, JSON.stringify(body), null, send_json_header);
+		}
+		
+		function handleListClick(event, callback) {
+			/*
+			find the Drive Api reference here
+			https://developers.google.com/drive/v2/reference/
+			*/
+			var url = 'https://www.googleapis.com/drive/v2/files'+serialize({'q': 'title="blocky" and trashed=false'});   
+			get_request(url, function(xhr) {
+				var obj = xhr_json_response(xhr);
+				console.info('documents', obj, obj.items);
+				if(typeof callback === "function") {
+					callback(obj);
+				}
+			}); 
+		}
+		
+		function handleWorksheetsClick(events) {
+			/*
+			Google Sheets Api has no "reference" page and i 
+			couldn't figure out a way to find a spreadsheet based on it's id.
+			https://developers.google.com/google-apps/spreadsheets/index
+			
+			Make sure that the "blocky" spreadsheet has the following rows:
+	        key   content url
+	        a1    a2      a3
+	        b1    b2      b3
+			*/
+			
+			handleListClick(null, function(obj) {
+				// This is the endpoint for getting the worksheets of a spreadsheet identified by "id"
+                var url = 'https://spreadsheets.google.com/feeds/worksheets/'+encodeURIComponent(obj.items[0].id)+'/private/full';
+				
+                /*
+				=== TROUBLE AHEAD ===
+                Google Sheets Api by default returns and accepts "application/atom+xml" content type - that's XML strings
+                */
+                
+                // Let's get an "ATOM+XML" response of the worksheets for our "blocky" spreadsheet
+                get_request(url, function(xhr) {
+                	console.info('Request atom+xml', xhr);
+                }, headers.accept_xml);
+                
+                /*
+                The request doesn't get thought because of this error:
+                No 'Access-Control-Allow-Origin' header is present on the requested resource. Origin 'http://localhost:8888' is therefore not allowed access.
+                
+                If you check the Network Headers in Chrome Developer tools, 
+                Chrome first does a "OPTIONS" request to the "url" and gets:
+                    access-control-allow-headers:authorization
+                    access-control-allow-methods:GET,OPTIONS
+                    access-control-allow-origin:http://localhost:8888
+                
+                All seems fine until it makes the actual "GET" request where the "access-control-allow-origin" header dissapears 
+                and Google Chrome denies the cross origin request. 
+                */
+                
+                /*
+                Let's alter the "url" to request a "JSON" feed as described here: 
+                https://developers.google.com/gdata/docs/json
+                */
+                
+                get_request(url+'?alt=json', function(xhr) {
+                    console.info('Request json', xhr);
+                    var obj = xhr_json_response(xhr);
+                    console.log('json', obj, obj.feed.entry[0]);
+                    
+                    /*
+                    Using a JSON request (?alt=json) allows getting the data out of the worksheets.
+                    Manually add some data to the "blocky" spreadsheet in Google Drive app to see results
+                    */
+                    var url = obj.feed.entry[0].link[0].href;
+                    get_request(url+'?alt=json', function(xhr) {
+                    	var obj = xhr_json_response(xhr);
+                    	console.info('Spreadsheet data', obj, obj.feed.entry);
+                    });
+                }, headers.accept_json);
+                
+			});
+		}
+		
+		function handleRowClick(events) {
+			handleListClick(null, function(obj) {
+				/*
+		        Adding new rows as described in the chapter "Add a list row" from 
+		        https://developers.google.com/google-apps/spreadsheets/data
+		        is not working
+
+		        */
+				var url = 'https://spreadsheets.google.com/feeds/worksheets/'+encodeURIComponent(obj.items[0].id)+'/private/full';
+				get_request(url+'?alt=json', function(xhr) {
+                    console.info('Request json', xhr);
+                    var obj = xhr_json_response(xhr);
+                    //console.log('worksheet', obj)
+                    
+                    var url = obj.feed.entry[0].link[0].href;
+                    var post_data = '<entry xmlns="http://www.w3.org/2005/Atom" xmlns:gsx="http://schemas.google.com/spreadsheets/2006/extended"><gsx:key>x1</gsx:key><gsx:content>x2</gsx:content><gsx:url>x3</gsx:url></entry>';
+                    post_request(url, post_data, function(xhr) {
+                    	console.log('post data', xhr);
+                    	/*
+                    	No 'Access-Control-Allow-Origin' header is present on the requested resource. Origin 'http://localhost:8888' is therefore not allowed access.
+                    	*/
+                    }, headers.send_xml);
+				});
+			});
+		}
+    </script>
+    <script src="https://apis.google.com/js/auth.js?onload=handleClientLoad"></script>
+  </body>
+</html>
